@@ -1,4 +1,4 @@
-import React, { useReducer, useCallback } from 'react';
+import React, { useReducer, useCallback, useEffect } from 'react';
 import Header from './components/Header';
 import ImageUploader from './components/ImageUploader';
 import PromptInput from './components/PromptInput';
@@ -8,6 +8,7 @@ import SceneSelector from './components/SceneSelector';
 import SessionLibrary from './components/SessionLibrary';
 import ComparisonModal from './components/ComparisonModal';
 import Footer from './components/Footer';
+import CreditTracker from './components/CreditTracker';
 import { generateAdMockup } from './services/geminiService';
 import type { GeneratedAdContent } from './types';
 import { SCENES } from './constants';
@@ -26,6 +27,7 @@ interface AppState {
   error: string | null;
   sessionImages: GeneratedAdContent[];
   comparisonImageIds: string[];
+  credits: number;
 }
 
 const initialState: AppState = {
@@ -39,6 +41,7 @@ const initialState: AppState = {
   error: null,
   sessionImages: [],
   comparisonImageIds: [],
+  credits: 5, // Default, will be hydrated from localStorage
 };
 
 type AppAction =
@@ -54,7 +57,8 @@ type AppAction =
   | { type: 'DELETE_SESSION_IMAGE'; payload: { id: string } }
   | { type: 'CLEAR_SESSION' }
   | { type: 'TOGGLE_COMPARE'; payload: { id: string } }
-  | { type: 'CLEAR_COMPARISON' };
+  | { type: 'CLEAR_COMPARISON' }
+  | { type: 'SET_CREDITS', payload: { credits: number } };
 
 function appReducer(state: AppState, action: AppAction): AppState {
     switch (action.type) {
@@ -93,6 +97,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
                 isLoading: true,
                 error: null,
                 generatedAd: null,
+                credits: Math.max(0, state.credits - 1),
             };
         case 'GENERATION_SUCCESS':
             return {
@@ -141,6 +146,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
                 ...state,
                 comparisonImageIds: [],
             };
+        case 'SET_CREDITS':
+            return {
+                ...state,
+                credits: action.payload.credits,
+            }
         default:
             return state;
     }
@@ -159,8 +169,41 @@ const App: React.FC = () => {
       isLoading,
       error,
       sessionImages,
-      comparisonImageIds
+      comparisonImageIds,
+      credits
   } = state;
+
+  useEffect(() => {
+    const storedCredits = localStorage.getItem('adGenCredits');
+    const today = new Date().toISOString().split('T')[0];
+    
+    const initializeCredits = (count: number, date: string) => {
+        localStorage.setItem('adGenCredits', JSON.stringify({ count, date }));
+        dispatch({ type: 'SET_CREDITS', payload: { credits: count } });
+    }
+
+    if (storedCredits) {
+        try {
+            const { count, date } = JSON.parse(storedCredits);
+            if (date === today) {
+                dispatch({ type: 'SET_CREDITS', payload: { credits: count } });
+            } else {
+                initializeCredits(5, today); // New day, reset credits
+            }
+        } catch (e) {
+            initializeCredits(5, today); // Corrupted data, reset
+        }
+    } else {
+        initializeCredits(5, today); // First time visit
+    }
+  }, []);
+
+  useEffect(() => {
+    // Sync credits to localStorage whenever they change in state
+    const today = new Date().toISOString().split('T')[0];
+    localStorage.setItem('adGenCredits', JSON.stringify({ count: credits, date: today }));
+  }, [credits]);
+
 
   const handleImageUpload = useCallback((file: File) => {
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
@@ -183,6 +226,11 @@ const App: React.FC = () => {
   }, []);
   
   const handleGenerateAd = async () => {
+    if (credits <= 0) {
+        dispatch({ type: 'GENERATION_ERROR', payload: { error: "You have no credits left for today." }});
+        return;
+    }
+    
     if (!imageFile || !productImagePreview || !selectedScene) {
       dispatch({ type: 'GENERATION_ERROR', payload: { error: 'Please upload an image and select an ad scene.' }});
       return;
@@ -229,13 +277,14 @@ const App: React.FC = () => {
     }
   };
 
-  const isGenerationEnabled = !!imageFile && !!selectedScene;
+  const isGenerationEnabled = !!imageFile && !!selectedScene && credits > 0;
 
   return (
     <div className="min-h-screen bg-slate-900 font-sans flex flex-col">
       <Header />
       <main className="container mx-auto p-4 md:p-8 flex-grow">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <CreditTracker credits={credits} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
           {/* Top-Left: Uploader */}
           <div className="p-6 bg-slate-800/50 rounded-xl border border-slate-700 flex flex-col gap-4">
             <h2 className="text-lg font-semibold text-sky-300">1. Upload Product Image</h2>
