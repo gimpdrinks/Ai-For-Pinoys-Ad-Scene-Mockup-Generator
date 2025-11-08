@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useReducer, useCallback } from 'react';
 import Header from './components/Header';
 import ImageUploader from './components/ImageUploader';
 import PromptInput from './components/PromptInput';
@@ -9,169 +9,191 @@ import SessionLibrary from './components/SessionLibrary';
 import ComparisonModal from './components/ComparisonModal';
 import Footer from './components/Footer';
 import { generateAdMockup } from './services/geminiService';
-import type { GeneratedAdContent, Scene } from './types';
+import type { GeneratedAdContent } from './types';
+import { SCENES } from './constants';
+import { parseBase64 } from './utils';
 
-const SCENES: Scene[] = [
-    { 
-        id: 'edsa-billboard', 
-        name: 'EDSA Highway Billboard', 
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584143/EDSA_zxvubm.png',
-        description: 'A massive digital billboard along the busy EDSA highway in Manila, surrounded by heavy traffic and urban scenery.'
-    },
-    { 
-        id: 'bus-stop', 
-        name: 'Bus Stop Ad', 
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/Bus_Stop_nu8xvf.png',
-        description: 'A printed advertisement displayed inside a bus stop shelter.'
-    },
-    { 
-        id: 'magazine-spread', 
-        name: 'Glossy Magazine Spread', 
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584143/Magazine_jrqbfe.png',
-        description: 'A two-page ad in a high-end fashion or lifestyle magazine.'
-    },
-    { 
-        id: 'subway-poster', 
-        name: 'Subway Car Poster', 
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584151/Subway_iwypgo.png',
-        description: 'An advertisement poster displayed inside a subway car.'
-    },
-    {
-        id: 'vintage-newspaper',
-        name: 'Vintage Newspaper Ad',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584151/Vintage_rpc7sz.png',
-        description: 'A black-and-white advertisement in an old-fashioned newspaper style.'
-    },
-    { 
-        id: 'social-media-story', 
-        name: 'Social Media Story', 
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584147/Social_Media_Story_h7q0ev.png',
-        description: 'A full-screen vertical ad on platforms like Instagram or Snapchat.'
-    },
-    {
-        id: 'airport-carousel',
-        name: 'Airport Luggage Carousel',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/Airport_l06218.png',
-        description: 'An advertisement displayed on the moving luggage carousel at an airport.'
-    },
-    {
-        id: 'coffee-shop-stand',
-        name: 'Coffee Shop Table Stand',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/Coffee_Shop_xb5fgk.png',
-        description: 'A small, triangular advertisement placed on tables in a coffee shop.'
-    },
-    {
-        id: 'movie-theater-screen',
-        name: 'Movie Theater Screen',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584143/Moviehouse_wca3kz.png',
-        description: 'A pre-movie advertisement shown on the big screen in a cinema.'
-    },
-    {
-        id: 'stadium-jumbotron',
-        name: 'Stadium Jumbotron',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584146/Stadium_xkfwgs.png',
-        description: 'A large video screen in a sports stadium.'
-    },
-    {
-        id: 'social-feed-post',
-        name: 'Social Media Feed Post',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584145/Social_Media_Feed_yw2mhb.png',
-        description: 'A typical image or video ad in an Instagram or Facebook feed.'
-    },
-    {
-        id: 'tiktok-ad',
-        name: 'TikTok Vertical Ad',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584146/TikTok_Ad_c33nar.png',
-        description: 'A short-form video ad designed for the TikTok platform.'
-    },
-    {
-        id: 'ecommerce-page',
-        name: 'E-Commerce Product Page',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/ECommerce_dntvn0.png',
-        description: 'A realistic mockup of the product on an e-commerce website page.'
-    },
-    {
-        id: 'email-banner',
-        name: 'Email Banner Ad',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584143/Email_Banner_fcjpru.png',
-        description: 'A horizontal advertisement banner for use in email marketing.'
-    },
-    {
-        id: 'youtube-thumbnail',
-        name: 'YouTube Pre-Roll Thumbnail',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584148/Youtube_sj6kxx.png',
-        description: 'The still image thumbnail displayed before a YouTube video ad plays.'
-    },
-    {
-        id: 'mobile-banner',
-        name: 'In-App Mobile Banner',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/In_App_orpgsb.png',
-        description: 'A small advertisement banner displayed within a mobile app.'
-    },
-    {
-        id: 'highway-billboard',
-        name: 'Highway Billboard',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584141/Highway_lsugjw.png',
-        description: 'A large billboard located alongside a highway.'
-    },
-    {
-        id: 'retail-display',
-        name: 'Retail Shelf Display',
-        thumbnail: 'https://res.cloudinary.com/dbylka4xx/image/upload/v1760584143/Retail_Shelf_vuujkt.png',
-        description: 'An ad on a shelf or display within a retail store (end-cap or signage).'
-    },
-];
+// --- State Management (Reducer) ---
+
+interface AppState {
+  productImagePreview: string | null;
+  imageFile: File | null;
+  selectedScene: string | null;
+  adPrompt: string;
+  additionalInstructions: string;
+  generatedAd: GeneratedAdContent | null;
+  isLoading: boolean;
+  error: string | null;
+  sessionImages: GeneratedAdContent[];
+  comparisonImageIds: string[];
+}
+
+const initialState: AppState = {
+  productImagePreview: null,
+  imageFile: null,
+  selectedScene: 'edsa-billboard', // Default scene
+  adPrompt: '',
+  additionalInstructions: '',
+  generatedAd: null,
+  isLoading: false,
+  error: null,
+  sessionImages: [],
+  comparisonImageIds: [],
+};
+
+type AppAction =
+  | { type: 'SET_IMAGE'; payload: { file: File; previewUrl: string } }
+  | { type: 'SET_IMAGE_ERROR'; payload: { error: string } }
+  | { type: 'SET_SCENE'; payload: { sceneId: string | null } }
+  | { type: 'SET_AD_PROMPT'; payload: { prompt: string } }
+  | { type: 'SET_ADDITIONAL_INSTRUCTIONS'; payload: { instructions: string } }
+  | { type: 'START_GENERATION' }
+  | { type: 'GENERATION_SUCCESS'; payload: { newAd: GeneratedAdContent } }
+  | { type: 'GENERATION_ERROR'; payload: { error: string } }
+  | { type: 'CLEAR_ERROR' }
+  | { type: 'DELETE_SESSION_IMAGE'; payload: { id: string } }
+  | { type: 'CLEAR_SESSION' }
+  | { type: 'TOGGLE_COMPARE'; payload: { id: string } }
+  | { type: 'CLEAR_COMPARISON' };
+
+function appReducer(state: AppState, action: AppAction): AppState {
+    switch (action.type) {
+        case 'SET_IMAGE':
+            return {
+                ...state,
+                imageFile: action.payload.file,
+                productImagePreview: action.payload.previewUrl,
+                error: null,
+            };
+        case 'SET_IMAGE_ERROR':
+            return {
+                ...state,
+                imageFile: null,
+                productImagePreview: null,
+                error: action.payload.error,
+            };
+        case 'SET_SCENE':
+            return {
+                ...state,
+                selectedScene: action.payload.sceneId,
+            };
+        case 'SET_AD_PROMPT':
+            return {
+                ...state,
+                adPrompt: action.payload.prompt,
+            };
+        case 'SET_ADDITIONAL_INSTRUCTIONS':
+            return {
+                ...state,
+                additionalInstructions: action.payload.instructions,
+            };
+        case 'START_GENERATION':
+            return {
+                ...state,
+                isLoading: true,
+                error: null,
+                generatedAd: null,
+            };
+        case 'GENERATION_SUCCESS':
+            return {
+                ...state,
+                isLoading: false,
+                generatedAd: action.payload.newAd,
+                sessionImages: [action.payload.newAd, ...state.sessionImages],
+            };
+        case 'GENERATION_ERROR':
+            return {
+                ...state,
+                isLoading: false,
+                error: action.payload.error,
+            };
+        case 'CLEAR_ERROR':
+            return {
+                ...state,
+                error: null,
+            };
+        case 'DELETE_SESSION_IMAGE':
+            const { id } = action.payload;
+            return {
+                ...state,
+                sessionImages: state.sessionImages.filter(img => img.id !== id),
+                comparisonImageIds: state.comparisonImageIds.filter(compId => compId !== id),
+                generatedAd: state.generatedAd?.id === id ? null : state.generatedAd,
+            };
+        case 'CLEAR_SESSION':
+            return {
+                ...state,
+                sessionImages: [],
+                generatedAd: null,
+                comparisonImageIds: [],
+            };
+        case 'TOGGLE_COMPARE':
+            const compId = action.payload.id;
+            const isComparing = state.comparisonImageIds.includes(compId);
+            return {
+                ...state,
+                comparisonImageIds: isComparing
+                    ? state.comparisonImageIds.filter(id => id !== compId)
+                    : [...state.comparisonImageIds, compId],
+            };
+        case 'CLEAR_COMPARISON':
+            return {
+                ...state,
+                comparisonImageIds: [],
+            };
+        default:
+            return state;
+    }
+}
+
 
 const App: React.FC = () => {
-  const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [selectedScene, setSelectedScene] = useState<string | null>('edsa-billboard');
-  const [adPrompt, setAdPrompt] = useState<string>('');
-  const [additionalInstructions, setAdditionalInstructions] = useState<string>('');
-  const [generatedAd, setGeneratedAd] = useState<GeneratedAdContent | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sessionImages, setSessionImages] = useState<GeneratedAdContent[]>([]);
-  const [comparisonImageIds, setComparisonImageIds] = useState<string[]>([]);
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  const {
+      productImagePreview,
+      imageFile,
+      selectedScene,
+      adPrompt,
+      additionalInstructions,
+      generatedAd,
+      isLoading,
+      error,
+      sessionImages,
+      comparisonImageIds
+  } = state;
 
   const handleImageUpload = useCallback((file: File) => {
     const validTypes = ['image/png', 'image/jpeg', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setError('Invalid file type. Please upload a PNG, JPG, or WEBP image.');
+      dispatch({ type: 'SET_IMAGE_ERROR', payload: { error: 'Invalid file type. Please upload a PNG, JPG, or WEBP image.' }});
       return;
     }
-    setError(null);
-    setImageFile(file);
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+    if (file.size > MAX_FILE_SIZE) {
+        dispatch({ type: 'SET_IMAGE_ERROR', payload: { error: 'File is too large. Please upload an image smaller than 5MB.' }});
+        return;
+    }
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      setProductImagePreview(reader.result as string);
+      dispatch({ type: 'SET_IMAGE', payload: { file, previewUrl: reader.result as string }});
     };
     reader.readAsDataURL(file);
   }, []);
   
-  const parseBase64 = (dataUrl: string): { base64Data: string; mimeType: string } => {
-    const parts = dataUrl.split(',');
-    if (parts.length !== 2) throw new Error('Invalid Data URL');
-    const mimeType = parts[0].split(':')[1].split(';')[0];
-    return { base64Data: parts[1], mimeType };
-  };
-
   const handleGenerateAd = async () => {
     if (!imageFile || !productImagePreview || !selectedScene) {
-      setError('Please upload an image and select an ad scene.');
+      dispatch({ type: 'GENERATION_ERROR', payload: { error: 'Please upload an image and select an ad scene.' }});
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setGeneratedAd(null);
+    dispatch({ type: 'START_GENERATION' });
 
     const scene = SCENES.find(s => s.id === selectedScene);
 
     if (!scene) {
-        setError('Selected scene not found. Please select a scene again.');
-        setIsLoading(false);
+        dispatch({ type: 'GENERATION_ERROR', payload: { error: 'Selected scene not found. Please select a scene again.' }});
         return;
     }
     
@@ -200,38 +222,11 @@ const App: React.FC = () => {
         ...result,
         id: `ad-${Date.now()}`
       };
-      setGeneratedAd(newAd);
-      setSessionImages(prev => [newAd, ...prev]);
+      dispatch({ type: 'GENERATION_SUCCESS', payload: { newAd }});
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+      dispatch({ type: 'GENERATION_ERROR', payload: { error: errorMessage }});
     }
-  };
-
-  const handleDeleteImage = (id: string) => {
-    setSessionImages(prev => prev.filter(img => img.id !== id));
-    setComparisonImageIds(prev => prev.filter(compId => compId !== id));
-    if (generatedAd?.id === id) {
-        setGeneratedAd(null);
-    }
-  };
-
-  const handleClearSession = () => {
-    setSessionImages([]);
-    setGeneratedAd(null);
-    setComparisonImageIds([]);
-  };
-
-  const handleToggleCompare = (id: string) => {
-    setComparisonImageIds(prev =>
-        prev.includes(id) ? prev.filter(compId => compId !== id) : [...prev, id]
-    );
-  };
-
-  const handleClearComparison = () => {
-    setComparisonImageIds([]);
   };
 
   const isGenerationEnabled = !!imageFile && !!selectedScene;
@@ -250,7 +245,7 @@ const App: React.FC = () => {
           {/* Top-Right: Scene Selector */}
           <div className="p-6 bg-slate-800/50 rounded-xl border border-slate-700 flex flex-col gap-4">
             <h2 className="text-lg font-semibold text-sky-300">2. Select an Ad Scene</h2>
-            <SceneSelector scenes={SCENES} selectedScene={selectedScene} onSelectScene={setSelectedScene} />
+            <SceneSelector scenes={SCENES} selectedScene={selectedScene} onSelectScene={(id) => dispatch({ type: 'SET_SCENE', payload: { sceneId: id } })} />
           </div>
           
           {/* Bottom-Left: Customize Ad */}
@@ -258,14 +253,14 @@ const App: React.FC = () => {
             <h2 className="text-lg font-semibold text-sky-300">3. Customize Ad (Optional)</h2>
             <PromptInput
               prompt={adPrompt}
-              setPrompt={setAdPrompt}
+              setPrompt={(prompt) => dispatch({ type: 'SET_AD_PROMPT', payload: { prompt }})}
               additionalInstructions={additionalInstructions}
-              setAdditionalInstructions={setAdditionalInstructions}
+              setAdditionalInstructions={(instructions) => dispatch({ type: 'SET_ADDITIONAL_INSTRUCTIONS', payload: { instructions }})}
               onSubmit={handleGenerateAd}
               isLoading={isLoading}
               isGenerationEnabled={isGenerationEnabled}
             />
-             {error && <ErrorAlert message={error} onDismiss={() => setError(null)} />}
+             {error && <ErrorAlert message={error} onDismiss={() => dispatch({ type: 'CLEAR_ERROR' })} />}
           </div>
 
           {/* Bottom-Right: Output */}
@@ -288,9 +283,9 @@ const App: React.FC = () => {
         {sessionImages.length > 0 && (
           <SessionLibrary 
             images={sessionImages}
-            onDelete={handleDeleteImage}
-            onClear={handleClearSession}
-            onToggleCompare={handleToggleCompare}
+            onDelete={(id) => dispatch({ type: 'DELETE_SESSION_IMAGE', payload: { id } })}
+            onClear={() => dispatch({ type: 'CLEAR_SESSION' })}
+            onToggleCompare={(id) => dispatch({ type: 'TOGGLE_COMPARE', payload: { id } })}
             comparisonImageIds={comparisonImageIds}
           />
         )}
@@ -298,7 +293,7 @@ const App: React.FC = () => {
        {comparisonImageIds.length > 1 && (
         <ComparisonModal 
             images={sessionImages.filter(img => comparisonImageIds.includes(img.id))}
-            onClose={handleClearComparison}
+            onClose={() => dispatch({ type: 'CLEAR_COMPARISON' })}
         />
        )}
        <Footer />

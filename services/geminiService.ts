@@ -40,8 +40,10 @@ export const generateAdMockup = async (
       text: null,
     };
     
-    if (response.candidates && response.candidates.length > 0) {
-        for (const part of response.candidates[0].content.parts) {
+    const candidate = response.candidates?.[0];
+
+    if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
             if (part.text) {
                 adContent.text = part.text;
             } else if (part.inlineData) {
@@ -54,6 +56,9 @@ export const generateAdMockup = async (
 
 
     if (!adContent.imageUrl) {
+      if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+        throw new Error(`Content generation failed. Reason: ${candidate.finishReason}. Please adjust your prompt or image.`);
+      }
       throw new Error("The AI did not return an image. Please try a different prompt.");
     }
 
